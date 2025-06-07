@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis-for-campusx
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  api-server:
+    build: .
+    container_name: cmo-api-server
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - redis
+    command: ["node", "agentsEntry/cmoAgentEntry.js"]
+
+  campusx-api-server:
+    build: .
+    container_name: campusx-api-server
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - REDIS_URL=redis://redis:6379
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - redis
+
+    command: ["node", "index.js"]
+
+volumes: {}

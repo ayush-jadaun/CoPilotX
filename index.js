@@ -2,6 +2,10 @@ import express from "express";
 import dotenv from "dotenv";
 import bodyParser from "body-parser";
 import { handleCMOAgentTask } from "./controllers/cmoAgentController.js";
+import { handleCTOAgentTask } from "./controllers/ctoAgentController.js";
+import { handleCFOAgentTask } from "./controllers/cfoAgentController.js";
+import { handleCEOAgentTask } from "./controllers/ceoAgentController.js";
+import vectorMemoryRoutes from "./routes/vectorMemoryRoutes.js"
 
 dotenv.config();
 
@@ -10,6 +14,10 @@ app.use(bodyParser.json());
 
 // ROUTES
 app.post("/agent/cmo", handleCMOAgentTask);
+app.post("/agent/cto", handleCTOAgentTask);
+app.post("/agent/cfo", handleCFOAgentTask);
+app.post("/agent/ceo", handleCEOAgentTask);
+app.use("/vector-memory", vectorMemoryRoutes);
 
 app.get("/test", (req, res) => {
   res.json({ message: "Server is running" });
@@ -17,5 +25,5 @@ app.get("/test", (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`CMO Agent Server running on port ${PORT}`);
+  console.log(`Agent Server running on port ${PORT}`);
 });

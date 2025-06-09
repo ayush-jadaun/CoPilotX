@@ -8,15 +8,14 @@ services:
       - "6379:6379"
     restart: unless-stopped
 
-  api-server:
-    build: .
-    container_name: cmo-api-server
-    environment:
-      - REDIS_URL=redis://redis:6379
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-    depends_on:
-      - redis
-    command: ["node", "agentsEntry/cmoAgentEntry.js"]
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: chroma-campux
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    restart: unless-stopped
 
   campusx-api-server:
     build: .
@@ -27,9 +26,59 @@ services:
       - PORT=3000
       - REDIS_URL=redis://redis:6379
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CHROMA_URL=http://chroma:8000
     depends_on:
       - redis
-
+      - chroma
     command: ["node", "index.js"]
 
-volumes: {}
+  cmo-agent-server:
+    build: .
+    container_name: cmo-agent-server
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CHROMA_URL=http://chroma:8000
+    depends_on:
+      - redis
+      - chroma
+    command: ["node", "agentsEntry/cmoAgentEntry.js"]
+
+  cto-agent-server:
+    build: .
+    container_name: cto-agent-server
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CHROMA_URL=http://chroma:8000
+    depends_on:
+      - redis
+      - chroma
+    command: ["node", "agentsEntry/ctoAgentEntry.js"]
+
+  cfo-agent-server:
+    build: .
+    container_name: cfo-agent-server
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CHROMA_URL=http://chroma:8000
+    depends_on:
+      - redis
+      - chroma
+    command: ["node", "agentsEntry/cfoAgentEntry.js"]
+
+  ceo-agent-server:
+    build: .
+    container_name: ceo-agent-server
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CHROMA_URL=http://chroma:8000
+    depends_on:
+      - redis
+      - chroma
+    command: ["node", "agentsEntry/ceoAgentEntry.js"]
+
+volumes:
+  chroma-data:

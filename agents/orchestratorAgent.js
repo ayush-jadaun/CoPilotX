@@ -1,17 +1,16 @@
 import MessageBus from "../utills/MemoryBus.js";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
-// Use Gemini ONLY for task planning/decomposition
 const llm = new ChatGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_API_KEY,
   model: "models/gemini-2.0-flash",
   temperature: 0,
 });
 
-// 1. Use Gemini to decompose the user prompt into agent-specific subtasks
+// Step 1: Use Gemini to decompose the user prompt into agent-specific subtasks
 async function planWithGemini(userTask) {
   const systemPrompt = `
-You are a startup orchestrator. 
+You are a startup orchestrator.
 Given a user request, decompose it into actionable subtasks for these agents:
 - CEO: Vision, GTM, positioning, market, mission
 - CTO: Tech, architecture, MVP, APIs, integration, stack
@@ -29,12 +28,11 @@ Return one subtask for each agent in this JSON format:
 User request: "${userTask}"
 `;
 
-const response = await llm.invoke(systemPrompt);
+  const response = await llm.invoke(systemPrompt);
   let subtasks = [];
   try {
     subtasks = JSON.parse(response.output || response);
   } catch (e) {
-    // fallback default
     subtasks = [
       {
         agent: "ceo",
@@ -57,24 +55,25 @@ const response = await llm.invoke(systemPrompt);
   return subtasks;
 }
 
-// 2. Orchestrator: keep the old agent names/channels, just use Gemini for planning
-export async function orchestrateWithPlanning(
+// Step 2: Parallel orchestrator function
+export async function orchestrateParallel(
   userTask,
   sessionId = "default",
-  timeoutMs = 30000
+  timeoutMs = 90000
 ) {
   const bus = new MessageBus("orchestrator");
   const results = {};
 
-  // Step 1: Use Gemini to produce agent-specific subtasks
+  // Step 1: Get subtasks
   const subtasks = await planWithGemini(userTask);
 
-  // Step 2: Dispatch each subtask to its assigned agent
+  // Step 2: Fire off all agent tasks in parallel and await their responses
   const agentPromises = subtasks.map(({ agent, subtask }) => {
     const replyChannel = `orchestrator.${agent}.reply.${Date.now()}.${Math.random()
       .toString(36)
       .slice(2)}`;
 
+    // Promise that resolves when agent replies or rejects on timeout
     const p = new Promise(async (resolve, reject) => {
       const handler = (msg) => {
         bus.unsubscribe(replyChannel, handler);
@@ -94,9 +93,11 @@ export async function orchestrateWithPlanning(
       replyChannel,
     });
 
-    return p
-      .then((result) => (results[agent] = result))
-      .catch((err) => (results[agent] = { error: err.message }));
+    // Save the result under the agent's name, handling errors
+    return p.then(
+      (result) => (results[agent] = result),
+      (err) => (results[agent] = { error: err.message })
+    );
   });
 
   await Promise.all(agentPromises);

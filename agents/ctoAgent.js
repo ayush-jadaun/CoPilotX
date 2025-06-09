@@ -3,6 +3,7 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ctoAgentPrompt } from "../prompts/ctoAgentPromt.js";
 import MessageBus from "../utills/MemoryBus.js";
 import MemoryManager from "./memory/MemoryManager.js";
+import { v4 as uuidv4 } from "uuid"; // npm install uuid
 
 const bus = new MessageBus("cto");
 
@@ -19,14 +20,12 @@ try {
   memoryManager = null;
 }
 
-// Use a supported model for Google AI Studio API key
 const llm = new ChatGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_API_KEY,
   model: "models/gemini-2.0-flash",
   temperature: 0,
 });
 
-// No extra tools for CTO agent at this stage
 const tools = [];
 
 const agent = await createReactAgent({
@@ -44,6 +43,47 @@ export const ctoAgentExecutor = new AgentExecutor({
   handleParsingErrors: true,
 });
 
+// ---- GENERAL AGENT-TO-AGENT COMMUNICATION LOGIC ----
+
+const KNOWN_AGENTS = ["ceo", "cfo", "cmo", "cto"]; // Add other agent types as needed
+
+function extractAgentRequests(userTask) {
+  // RegEx to find "check with/ask/confirm with <agent>" patterns
+  // e.g. "CTO, check with CMO about integrations and with CFO about budget limits."
+  const requests = [];
+  const pattern =
+    /(check with|ask|confirm with)\s+(the\s+)?(ceo|cfo|cmo|cto)([^.?!]*)[.?!]/gi;
+  let match;
+  while ((match = pattern.exec(userTask)) !== null) {
+    const verb = match[1].toLowerCase();
+    const agent = match[3].toLowerCase();
+    let question = match[4] ? match[4].trim() : "";
+    // Clean up question text
+    if (!question || question.length < 3)
+      question = "Please advise on the relevant matter.";
+    requests.push({ agent, verb, question });
+  }
+  return requests;
+}
+
+async function waitForAgentReply(replyChannel, agent, timeout = 30000) {
+  return new Promise((resolve, reject) => {
+    const handler = (msg) => {
+      console.log(
+        `[AGENT-COMM] [CTO] Got reply from ${agent.toUpperCase()} on ${replyChannel}:`,
+        msg
+      );
+      bus.unsubscribe(replyChannel, handler);
+      resolve(msg);
+    };
+    bus.subscribe(replyChannel, handler);
+    setTimeout(() => {
+      bus.unsubscribe(replyChannel, handler);
+      reject(new Error(`Timeout waiting for ${agent.toUpperCase()} reply`));
+    }, timeout);
+  });
+}
+
 export async function runCTOAgent(userTask, pubSubOptions = {}) {
   try {
     console.log("Starting CTO agent with task:", userTask);
@@ -53,11 +93,58 @@ export async function runCTOAgent(userTask, pubSubOptions = {}) {
     let enhancedInput = userTask;
     let mode = "simple";
 
-    // Try to get context if memory system is available
+    // ---- GENERAL INTER-AGENT PATCH ----
+    const agentRequests = extractAgentRequests(userTask);
+    const interAgentResponses = {};
+
+    for (const req of agentRequests) {
+      const { agent, verb, question } = req;
+      if (!KNOWN_AGENTS.includes(agent) || agent === "cto") continue;
+      const replyChannel = `cto.${agent}.collab.reply.${uuidv4()}`;
+      const agentRequest = {
+        userTask: `CTO requests: ${question}`,
+        replyChannel,
+        sessionId,
+        fromAgent: "cto",
+      };
+      console.log(
+        `[AGENT-COMM] [CTO→${agent.toUpperCase()}] Sending:`,
+        agentRequest
+      );
+      bus.publish(`agent.${agent}.request`, agentRequest);
+
+      try {
+        const reply = await waitForAgentReply(replyChannel, agent, 30000);
+        interAgentResponses[agent] =
+          reply.output || reply.data?.output || JSON.stringify(reply);
+        console.log(
+          `[AGENT-COMM] [${agent.toUpperCase()}→CTO] Reply received:`,
+          interAgentResponses[agent]
+        );
+        mode = "agent-collab";
+      } catch (err) {
+        interAgentResponses[
+          agent
+        ] = `No reply from ${agent.toUpperCase()} (timeout).`;
+        console.warn(
+          `[AGENT-COMM] [CTO] ${agent.toUpperCase()} did not reply in time!`
+        );
+        mode = "agent-collab";
+      }
+    }
+
+    // Add all agent replies to the input for the LLM
+    if (Object.keys(interAgentResponses).length > 0) {
+      for (const [agent, response] of Object.entries(interAgentResponses)) {
+        enhancedInput += `\n\n${agent.toUpperCase()}'s response: ${response}\n`;
+      }
+    }
+
+    // ---- CONTEXT LOGIC (unchanged) ----
     if (memoryManager) {
       try {
         contextItems = await memoryManager.getRelevantContext(
-          userTask,
+          enhancedInput,
           sessionId,
           {
             vectorTopK: 3,
@@ -69,9 +156,9 @@ export async function runCTOAgent(userTask, pubSubOptions = {}) {
           const contextString =
             memoryManager.formatContextForPrompt(contextItems);
           enhancedInput = contextString
-            ? `${contextString}Current Task: ${userTask}`
-            : userTask;
-          mode = "contextual";
+            ? `${contextString}Current Task: ${enhancedInput}`
+            : enhancedInput;
+          if (mode === "simple") mode = "contextual";
           console.log("Using context:", contextItems.length, "items");
         }
       } catch (error) {
@@ -80,14 +167,12 @@ export async function runCTOAgent(userTask, pubSubOptions = {}) {
     }
 
     console.log("Using CTO agent...");
-
     const agentResult = await ctoAgentExecutor.invoke({
       input: enhancedInput,
     });
 
     const result = agentResult.output ?? agentResult;
 
-    // Store interaction if memory system is available
     if (memoryManager) {
       try {
         await memoryManager.storeInteraction(userTask, result, sessionId);
@@ -129,8 +214,9 @@ export async function runCTOAgent(userTask, pubSubOptions = {}) {
   }
 }
 
-// Enhanced subscription handler with session support
+// Handles orchestrator and inter-agent requests in parallel
 export function subscribeToCTOTasks(ctoAgentRunner = runCTOAgent) {
+  // Orchestrator main tasks
   bus.subscribe("agent.cto.task", async (msg) => {
     try {
       console.log("[CTOAgent] Processing message:", msg);
@@ -150,7 +236,6 @@ export function subscribeToCTOTasks(ctoAgentRunner = runCTOAgent) {
         return;
       }
 
-      // Include sessionId in pubSubOptions
       const result = await ctoAgentRunner(userTask, { sessionId });
       console.log("[CTOAgent] CTO result:", result);
 
@@ -176,7 +261,48 @@ export function subscribeToCTOTasks(ctoAgentRunner = runCTOAgent) {
       }
     }
   });
+
+  // Agent-to-agent requests (e.g., from CEO, CMO, CFO)
+  bus.subscribe("agent.cto.request", async (msg) => {
+    try {
+      console.log("[CTOAgent] Processing agent-to-agent request:", msg);
+      const data = msg.data || msg;
+
+      if (!data || !data.userTask || !data.replyChannel) {
+        console.error("[CTOAgent] Invalid inter-agent message format:", msg);
+        return;
+      }
+
+      const { userTask, replyChannel, sessionId, fromAgent } = data;
+      console.log(
+        `[CTOAgent] Received agent-to-agent request from ${fromAgent}:`,
+        userTask
+      );
+
+      const result = await runCTOAgent(userTask, { sessionId });
+
+      await bus.publish(replyChannel, "CTO_REPLY", {
+        output: result.result,
+        mode: result.mode,
+        contextUsed: result.contextUsed,
+        sessionId,
+      });
+
+      console.log(`[CTOAgent] Replied to ${fromAgent} on ${replyChannel}`);
+    } catch (err) {
+      console.error("[CTOAgent] Error in agent-to-agent handler:", err);
+      if (msg?.data?.replyChannel) {
+        try {
+          await bus.publish(msg.data.replyChannel, "CTO_ERROR", {
+            error: err.message || "Unknown error occurred",
+            sessionId: msg.data.sessionId,
+          });
+        } catch (publishErr) {
+          console.error("[CTOAgent] Failed to publish error:", publishErr);
+        }
+      }
+    }
+  });
 }
 
-// Export memory manager for external access
 export { memoryManager };

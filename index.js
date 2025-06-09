@@ -6,6 +6,7 @@ import { handleCTOAgentTask } from "./controllers/ctoAgentController.js";
 import { handleCFOAgentTask } from "./controllers/cfoAgentController.js";
 import { handleCEOAgentTask } from "./controllers/ceoAgentController.js";
 import vectorMemoryRoutes from "./routes/vectorMemoryRoutes.js"
+import { handleOrchestratorRequest } from "./controllers/orchestratorAgentController.js";
 
 dotenv.config();
 
@@ -18,6 +19,7 @@ app.post("/agent/cto", handleCTOAgentTask);
 app.post("/agent/cfo", handleCFOAgentTask);
 app.post("/agent/ceo", handleCEOAgentTask);
 app.use("/vector-memory", vectorMemoryRoutes);
+app.use("/agent/orchestrator",handleOrchestratorRequest)
 
 app.get("/test", (req, res) => {
   res.json({ message: "Server is running" });

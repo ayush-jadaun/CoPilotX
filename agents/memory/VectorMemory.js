@@ -1,155 +1,91 @@
-import { Chroma } from "@langchain/community/vectorstores/chroma";
-import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import embeddingService from "../services/EmbeddingService.js"
+import { ChromaRestClient } from "../../chroma/chromaClient.js";
 
+/**
+ * VectorMemory class manages storing and retrieving vector-based memory using
+ * an external Chroma REST API, with an in-memory fallback.
+ */
 class VectorMemory {
   constructor(collectionName) {
     this.collectionName = collectionName;
     this.taskType = collectionName.replace("-memory", "");
-    this.embeddings = new GoogleGenerativeAIEmbeddings({
-      apiKey: process.env.GOOGLE_API_KEY,
-      model: "text-embedding-004",
-    });
-    this.vectorStore = null;
+    this.client = new ChromaRestClient(
+      process.env.CHROMA_URL || "http://localhost:8001"
+    );
     this.initialized = false;
     this.fallbackMode = false;
+    this.fallbackMemory = [];
   }
 
+  /**
+   * Initializes the memory system. Checks embedding availability.
+   */
   async initialize() {
     if (this.initialized) return;
-
-    // Check if GOOGLE_API_KEY is available
-    if (!process.env.GOOGLE_API_KEY) {
-      console.warn(
-        "[VectorMemory] GOOGLE_API_KEY not found, using fallback mode"
-      );
-      this.fallbackMode = true;
-      this.initialized = true;
-      this.fallbackMemory = [];
-      return;
-    }
-
     try {
-      // Test embeddings first
-      console.log("[VectorMemory] Testing embeddings...");
-      await this.embeddings.embedQuery("test connection");
-      console.log("[VectorMemory] Embeddings working");
-
-      // Initialize ChromaDB with minimal configuration
-      this.vectorStore = new Chroma(this.embeddings, {
-        collectionName: this.collectionName,
-        url: process.env.CHROMA_URL || "http://localhost:8000",
-      });
-
-      // Test connection with a simple operation
-      await this.testConnection();
+      await embeddingService.embedText("test connection");
       this.initialized = true;
       this.fallbackMode = false;
-      console.log(
-        `[VectorMemory] ChromaDB initialized with collection: ${this.collectionName}`
-      );
-    } catch (error) {
+      console.log(`[VectorMemory] Embeddings working`);
+    } catch (err) {
       console.warn(
-        "[VectorMemory] ChromaDB not available, using fallback mode:",
-        error.message
+        "[VectorMemory] Embeddings not available, using fallback mode"
       );
-      console.warn("[VectorMemory] Full error:", error);
-      this.fallbackMode = true;
       this.initialized = true;
+      this.fallbackMode = true;
       this.fallbackMemory = [];
     }
   }
 
-  async testConnection() {
-    try {
-      // First try to get the collection info
-      console.log("[VectorMemory] Testing ChromaDB connection...");
-
-      // Try a simple similarity search - if collection doesn't exist, it will be created
-      try {
-        const results = await this.vectorStore.similaritySearch("test", 1);
-        console.log(
-          "[VectorMemory] Connection test successful (existing collection)"
-        );
-      } catch (searchError) {
-        // Collection might not exist yet, try adding a document
-        console.log(
-          "[VectorMemory] Collection might be new, testing with document..."
-        );
-        const testDoc = {
-          pageContent: "Connection test document",
-          metadata: {
-            test: true,
-            timestamp: new Date().toISOString(),
-            id: "test-connection",
-          },
-        };
-
-        await this.vectorStore.addDocuments([testDoc]);
-        console.log("[VectorMemory] Document added successfully");
-
-        // Now try the search again
-        const results = await this.vectorStore.similaritySearch("test", 1);
-        console.log(
-          "[VectorMemory] Connection test successful (new collection)"
-        );
-      }
-    } catch (error) {
-      throw new Error(`ChromaDB connection test failed: ${error.message}`);
-    }
-  }
-
+  /**
+   * Stores a memory/document in Chroma or in-memory fallback.
+   */
   async storeMemory(userTask, result, metadata = {}) {
     await this.initialize();
 
-    const document = {
-      pageContent: `Task: ${userTask}\nResult: ${result}`,
-      metadata: {
-        timestamp: new Date().toISOString(),
-        taskType: this.taskType,
-        id: `${this.taskType}-${Date.now()}-${Math.random()
-          .toString(36)
-          .substr(2, 9)}`,
-        ...metadata,
-      },
+    const document = `Task: ${userTask}\nResult: ${result}`;
+    const meta = {
+      timestamp: new Date().toISOString(),
+      taskType: this.taskType,
+      id: `${this.taskType}-${Date.now()}-${Math.random()
+        .toString(36)
+        .substr(2, 9)}`,
+      ...metadata,
     };
 
     try {
       if (this.fallbackMode) {
-        if (!this.fallbackMemory) {
-          this.fallbackMemory = [];
-        }
-        this.fallbackMemory.push(document);
+        this.fallbackMemory.push({ pageContent: document, metadata: meta });
         if (this.fallbackMemory.length > 50) {
           this.fallbackMemory = this.fallbackMemory.slice(-50);
         }
         console.log("[VectorMemory] Memory stored in fallback mode");
       } else {
-        await this.vectorStore.addDocuments([document]);
-        console.log("[VectorMemory] Memory stored in ChromaDB");
+        await this.client.add(
+          this.collectionName,
+          [document],
+          [meta],
+          [meta.id]
+        );
+        console.log("[VectorMemory] Memory stored in Chroma REST API");
       }
     } catch (error) {
       console.error("[VectorMemory] Failed to store memory:", error);
-      // Fall back to in-memory storage if ChromaDB fails
       if (!this.fallbackMode) {
-        console.warn(
-          "[VectorMemory] Switching to fallback mode due to storage error"
-        );
         this.fallbackMode = true;
-        this.fallbackMemory = this.fallbackMemory || [];
-        this.fallbackMemory.push(document);
+        this.fallbackMemory.push({ pageContent: document, metadata: meta });
       }
     }
   }
 
+  /**
+   * Retrieves context relevant to the provided query.
+   * Tries Chroma vector search, then falls back to in-memory search.
+   */
   async retrieveContext(query, topK = 3) {
     await this.initialize();
-
     try {
       if (this.fallbackMode) {
-        if (!this.fallbackMemory) {
-          this.fallbackMemory = [];
-        }
-
         const results = this.fallbackMemory
           .filter(
             (doc) =>
@@ -169,103 +105,74 @@ class VectorMemory {
           metadata: doc.metadata,
         }));
       } else {
-        const results = await this.vectorStore.similaritySearch(query, topK);
-        console.log(
-          `[VectorMemory] Retrieved ${results.length} context items from ChromaDB`
+        const results = await this.client.query(
+          this.collectionName,
+          [query],
+          topK
         );
-        return results.map((doc) => ({
-          content: doc.pageContent,
-          metadata: doc.metadata,
+        // Chroma returns documents as a list of lists: [{documents: [[...]], metadatas: [[...]]}]
+        return (results.documents?.[0] || []).map((content, idx) => ({
+          content,
+          metadata: results.metadatas?.[0]?.[idx] || {},
         }));
       }
     } catch (error) {
       console.error("[VectorMemory] Failed to retrieve context:", error);
-      // If ChromaDB fails, switch to fallback and try again
       if (!this.fallbackMode) {
-        console.warn(
-          "[VectorMemory] Switching to fallback mode due to retrieval error"
-        );
         this.fallbackMode = true;
-        this.fallbackMemory = this.fallbackMemory || [];
         return this.retrieveContext(query, topK);
       }
       return [];
     }
   }
 
+  /**
+   * Clears all memory from Chroma or fallback.
+   */
   async clearMemory() {
     await this.initialize();
-
-    try {
-      if (this.fallbackMode) {
-        this.fallbackMemory = [];
-        console.log("[VectorMemory] Fallback memory cleared");
-      } else {
-        // ChromaDB collection deletion
-        try {
-          await this.vectorStore.delete();
-          console.log("[VectorMemory] ChromaDB collection deleted");
-        } catch (deleteError) {
-          console.warn(
-            "[VectorMemory] Standard delete failed, recreating collection:",
-            deleteError.message
-          );
-          // Reinitialize with same collection name
-          this.vectorStore = new Chroma(this.embeddings, {
-            collectionName: this.collectionName,
-            url: process.env.CHROMA_URL || "http://localhost:8000",
-          });
-          console.log("[VectorMemory] Collection recreated");
-        }
-      }
-    } catch (error) {
-      console.error("[VectorMemory] Failed to clear memory:", error);
-      throw error;
+    if (this.fallbackMode) {
+      this.fallbackMemory = [];
+      console.log("[VectorMemory] Fallback memory cleared");
+    } else {
+      await this.client.delete(this.collectionName);
+      console.log("[VectorMemory] Cleared Chroma collection");
     }
   }
 
-  // Utility method to check current mode
+  /**
+   * Returns true if currently in fallback mode.
+   */
   isUsingFallback() {
     return this.fallbackMode;
   }
 
-  // Get memory stats
+  /**
+   * Returns memory stats (mode, count, etc).
+   */
   async getMemoryStats() {
     await this.initialize();
-
     if (this.fallbackMode) {
       return {
         mode: "fallback",
-        count: this.fallbackMemory ? this.fallbackMemory.length : 0,
+        count: this.fallbackMemory.length,
         maxSize: 50,
       };
-    } else {
-      try {
-        return {
-          mode: "chromadb",
-          status: "connected",
-          collection: this.collectionName,
-        };
-      } catch (error) {
-        return {
-          mode: "chromadb",
-          status: "error",
-          error: error.message,
-        };
-      }
     }
+    return {
+      mode: "chromadb",
+      status: "connected",
+      collection: this.collectionName,
+    };
   }
 
-  // Force fallback mode (useful for testing)
+  /**
+   * Forces fallback mode (for testing).
+   */
   forceFallbackMode() {
     this.fallbackMode = true;
     this.fallbackMemory = this.fallbackMemory || [];
     console.log("[VectorMemory] Forced into fallback mode");
-  }
-
-  // Get current embeddings instance
-  getEmbeddings() {
-    return this.embeddings;
   }
 }
 

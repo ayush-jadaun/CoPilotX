@@ -85,7 +85,9 @@ Replace `{agent}` with your agent type.
 Replace `{agent}` with your agent type.
 
 **Instructions:**  
+
 - In Postman, set the method to `GET`.
+
 - Enter the URL (replace `{agent}`).
 - No body needed.
 - Click **Send**.

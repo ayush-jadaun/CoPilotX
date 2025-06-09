@@ -9,10 +9,12 @@ services:
     restart: unless-stopped
 
   chroma:
-    image: chromadb/chroma:latest
+    build:
+      context: ./chroma
+      dockerfile: Dockerfile  # This must be the Dockerfile you shared above
     container_name: chroma-campux
     ports:
-      - "8000:8000"
+      - "8001:8001"
     volumes:
       - chroma-data:/chroma/chroma
     restart: unless-stopped
@@ -26,7 +28,7 @@ services:
       - PORT=3000
       - REDIS_URL=redis://redis:6379
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - CHROMA_URL=http://chroma:8000
+      - CHROMA_URL=http://chroma:8001
     depends_on:
       - redis
       - chroma
@@ -38,7 +40,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - CHROMA_URL=http://chroma:8000
+      - CHROMA_URL=http://chroma:8001
     depends_on:
       - redis
       - chroma
@@ -50,7 +52,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - CHROMA_URL=http://chroma:8000
+      - CHROMA_URL=http://chroma:8001
     depends_on:
       - redis
       - chroma
@@ -62,7 +64,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - CHROMA_URL=http://chroma:8000
+      - CHROMA_URL=http://chroma:8001
     depends_on:
       - redis
       - chroma
@@ -74,7 +76,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - CHROMA_URL=http://chroma:8000
+      - CHROMA_URL=http://chroma:8001
     depends_on:
       - redis
       - chroma

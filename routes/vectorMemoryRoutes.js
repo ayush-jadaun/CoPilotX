@@ -2,17 +2,11 @@ import express from "express";
 import MemoryManager from "../agents/memory/MemoryManager.js";
 
 const router = express.Router();
-
-/**
- * MemoryManager cache for each agent type.
- * Ensures only one MemoryManager per agent per process.
- */
 const managers = {};
 
 function getManager(agentType) {
   if (!managers[agentType]) {
     managers[agentType] = new MemoryManager(agentType);
-    // Initialize manager async, but don't block route handler
     managers[agentType]
       .initialize()
       .catch((err) =>
@@ -22,11 +16,7 @@ function getManager(agentType) {
   return managers[agentType];
 }
 
-/**
- * Store an interaction for an agent (vector + session memory).
- * POST /vector-memory/:agent/store
- * Body: { userTask, result, sessionId?, metadata? }
- */
+// Store an interaction
 router.post("/:agent/store", async (req, res) => {
   const { agent } = req.params;
   const { userTask, result, sessionId = "default", metadata = {} } = req.body;
@@ -42,11 +32,7 @@ router.post("/:agent/store", async (req, res) => {
   }
 });
 
-/**
- * Retrieve relevant context for an agent.
- * POST /vector-memory/:agent/query
- * Body: { query, sessionId?, options? }
- */
+// Retrieve context
 router.post("/:agent/query", async (req, res) => {
   const { agent } = req.params;
   const { query, sessionId = "default", options = {} } = req.body;
@@ -62,10 +48,7 @@ router.post("/:agent/query", async (req, res) => {
   }
 });
 
-/**
- * Clear all memory for an agent (session + vector memory).
- * POST /vector-memory/:agent/clear
- */
+// Clear all memory
 router.post("/:agent/clear", async (req, res) => {
   const { agent } = req.params;
   try {
@@ -77,10 +60,7 @@ router.post("/:agent/clear", async (req, res) => {
   }
 });
 
-/**
- * Get memory stats for an agent.
- * GET /vector-memory/:agent/status
- */
+// Get status
 router.get("/:agent/status", async (req, res) => {
   const { agent } = req.params;
   try {

@@ -1,5 +1,5 @@
-# Use official Node.js LTS image
-FROM node:20-alpine
+# Use official Node.js LTS image with glibc (NOT Alpine)
+FROM node:20-slim
 
 # Set working directory
 WORKDIR /app

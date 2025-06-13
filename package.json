@@ -20,6 +20,7 @@
   "homepage": "https://github.com/ayush-jadaun/CoPilotX#readme",
   "dependencies": {
     "@chroma-core/default-embed": "^0.1.8",
+    "@google/generative-ai": "^0.24.1",
     "@langchain/community": "^0.3.45",
     "@langchain/core": "^0.3.57",
     "@langchain/google-genai": "^0.2.10",
@@ -29,6 +30,7 @@
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "langchain": "^0.3.27",
+    "pptxgenjs": "^4.0.0",
     "redis": "^5.5.5"
   }
 }

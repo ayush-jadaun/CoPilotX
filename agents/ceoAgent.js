@@ -1,6 +1,7 @@
 import { createReactAgent, AgentExecutor } from "langchain/agents";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ceoAgentPrompt } from "../prompts/ceoAgentPromt.js";
+import { pptMakerTool } from "../tools/ceo/PptMaker.js";
 import MessageBus from "../utills/MemoryBus.js";
 import MemoryManager from "./memory/MemoryManager.js";
 import { v4 as uuidv4 } from "uuid";
@@ -62,12 +63,15 @@ const llm = new ChatGoogleGenerativeAI({
   temperature: 0,
 });
 
-const tools = [];
+// Add the PowerPoint maker tool to the tools array
+const tools = [pptMakerTool];
+
 const agent = await createReactAgent({
   llm,
   tools,
   prompt: ceoAgentPrompt,
 });
+
 export const ceoAgentExecutor = new AgentExecutor({
   agent,
   tools,
@@ -76,6 +80,26 @@ export const ceoAgentExecutor = new AgentExecutor({
   returnIntermediateSteps: true,
   handleParsingErrors: true,
 });
+export async function deleteCEOMemory(sessionId = "default") {
+  try {
+    if (
+      memoryManager &&
+      memoryManager.vectorStore &&
+      memoryManager.vectorStore.collectionName
+    ) {
+      const result = await memoryManager.vectorStore.client.delete(
+        memoryManager.vectorStore.collectionName,
+        null,
+        { sessionId }
+      );
+      return { success: true, result };
+    } else {
+      throw new Error("No memory manager or vector store available.");
+    }
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
 
 // === GENERALIZED RUNNER ===
 export async function runCEOAgent(userTask, pubSubOptions = {}) {

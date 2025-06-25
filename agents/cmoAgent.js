@@ -1,9 +1,9 @@
-import { createReactAgent, AgentExecutor } from "langchain/agents";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { cmoAgentPrompt } from "../prompts/cmoAgentPromt.js";
 import MessageBus from "../utills/MemoryBus.js";
 import MemoryManager from "./memory/MemoryManager.js";
 import { v4 as uuidv4 } from "uuid";
+
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
 const bus = new MessageBus("cmo");
 
@@ -28,15 +28,30 @@ const llm = new ChatGoogleGenerativeAI({
 
 const tools = [];
 
-const agent = await createReactAgent({
+export const cmoAgentExecutor = createReactAgent({
   llm,
   tools,
-  prompt: cmoAgentPrompt,
-});
+  stateModifier: `You are the Chief Marketing Officer (CMO) Agent for a startup. You specialize in marketing, communications, and go-to-market strategy.
 
-export const cmoAgentExecutor = new AgentExecutor({
-  agent,
-  tools,
+Your goals:
+- Draft compelling marketing copy (e.g., headlines, value propositions, short and long descriptions).
+- Suggest landing page ideas, including structure, key sections, and calls-to-action.
+- Propose an SEO plan, including keywords, meta descriptions, and blog post ideas.
+- Suggest messaging, positioning, and go-to-market strategies as needed.
+
+You have access to some tools to perform certain tasks, use it wisely.
+
+Format your reasoning as follows:
+Question: the input question you must answer
+Thought: your reasoning process
+Action: (leave blank, as you have no tools)
+Action Input: (leave blank)
+Observation: (leave blank)
+... (repeat Thought/Action/Action Input/Observation as needed)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+Be concise, actionable, and creative in your recommendations.
+User input: {input}`,
   verbose: true,
   maxIterations: 20,
   returnIntermediateSteps: true,
@@ -164,10 +179,15 @@ export async function runCMOAgent(userTask, pubSubOptions = {}) {
     console.log("Using CMO agent...");
 
     const agentResult = await cmoAgentExecutor.invoke({
-      input: enhancedInput,
+      messages: [
+        {
+          role: "user", 
+          content: enhancedInput
+        }
+      ]
     });
 
-    const result = agentResult.output ?? agentResult;
+    const result = agentResult.messages[result.messages.length - 1].content;
 
     if (memoryManager) {
       try {

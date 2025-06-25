@@ -1,10 +1,10 @@
-import { createReactAgent, AgentExecutor } from "langchain/agents";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { ceoAgentPrompt } from "../prompts/ceoAgentPromt.js";
-import { pptMakerTool } from "../tools/ceo/PptMaker.js";
+import { pptMakerTool } from "../tools/ceo/newPptMaker.js";
 import MessageBus from "../utills/MemoryBus.js";
 import MemoryManager from "./memory/MemoryManager.js";
 import { v4 as uuidv4 } from "uuid";
+
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
 // === GENERAL AGENT-TO-AGENT UTILS (can be shared between agents) ===
 const KNOWN_AGENTS = ["ceo", "cfo", "cmo", "cto"];
@@ -66,20 +66,44 @@ const llm = new ChatGoogleGenerativeAI({
 // Add the PowerPoint maker tool to the tools array
 const tools = [pptMakerTool];
 
-const agent = await createReactAgent({
+// Langgraph's createReactAgent
+export const ceoAgentExecutor = createReactAgent({
   llm,
   tools,
-  prompt: ceoAgentPrompt,
+  stateModifier: `You are the CEO Agent for a startup. Your expertise is in refining vision, value proposition, and go-to-market (GTM) strategy.
+
+You have access to a PowerPoint presentation maker tool that can create professional presentations. Use this tool when:
+- Asked to create a presentation, pitch deck, or slides
+- Need to visualize strategic information
+- Want to present findings in a structured format
+- Creating investor presentations or board reports
+
+Given the user input, do the following:
+- Refine or critique the company's value proposition and vision statement
+- Propose improvements to the GTM strategy, including key messaging and target audiences
+- Suggest ways to align the team and resources for maximum impact
+- Create presentations when requested or when it would be valuable for strategic communication
+
+PowerPoint Tool Usage Examples:
+For a startup pitch deck, use the ppt_maker tool with this structure:
+- title: "Company Pitch Deck"
+- theme: "startup" 
+- slides: Array of slide objects with types like "content", "comparison", "conclusion"
+
+For a strategic presentation:
+- title: "Strategic Review"
+- theme: "corporate"
+- slides: Include current state, options analysis, recommendations
+
+Always provide actionable insights and create presentations when they would enhance communication of strategic concepts.
+
+User input: {input}`,
+  maxIterations: 4,
+  // returnIntermediateSteps: true,
+
 });
 
-export const ceoAgentExecutor = new AgentExecutor({
-  agent,
-  tools,
-  verbose: true,
-  maxIterations: 20,
-  returnIntermediateSteps: true,
-  handleParsingErrors: true,
-});
+
 export async function deleteCEOMemory(sessionId = "default") {
   try {
     if (
@@ -185,11 +209,17 @@ export async function runCEOAgent(userTask, pubSubOptions = {}) {
     }
 
     console.log("Using CEO agent...");
+    // 
     const agentResult = await ceoAgentExecutor.invoke({
-      input: enhancedInput,
+      messages: [
+        {
+          role: "user", 
+          content: enhancedInput
+        }
+      ]
     });
-
-    const result = agentResult.output ?? agentResult;
+// 
+    const result = agentResult.messages[result.messages.length - 1].content;
 
     if (memoryManager) {
       try {

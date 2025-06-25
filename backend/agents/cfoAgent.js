@@ -1,6 +1,8 @@
-import { createReactAgent, AgentExecutor } from "langchain/agents";
+// first
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { cfoAgentPrompt } from "../prompts/cfoAgentPromt.js";
+// second
+
 import MessageBus from "../utills/MemoryBus.js";
 import MemoryManager from "./memory/MemoryManager.js";
 import { v4 as uuidv4 } from "uuid";
@@ -106,33 +108,74 @@ const { primaryLLM, fallbackLLM } = createLLMWithFallback();
 const tools = [];
 
 // Create agent with primary LLM
-const agent = await createReactAgent({
-  llm: primaryLLM,
+// third
+export const cfoAgentExecutor = createReactAgent({
+  primaryLLM,
   tools,
-  prompt: cfoAgentPrompt,
+  stateModifier: `You are the CFO Agent for a startup. Your expertise is in financial modeling, runway planning, and pricing strategy.
+Important:
+- Always answer in the following EXACT format (never omit any section).
+- Never output anything except the required format. Never include troubleshooting URLs, tool call traces, or extra text after "Final Answer".
+- Never output more than one "Final Answer" in a single completion.
+
+Given the following input, do the following:
+- Create or review a pricing model for the product (including pricing tiers, rationale, and examples).
+- Draft a 12-month runway plan, outlining expenses, revenue projections, and key financial milestones.
+- Offer suggestions for optimizing financial health and investor readiness.
+
+You have access to some tools to perform certain tasks, use it wisely
+
+Format:
+Question: the input question you must answer  
+Thought: your reasoning process  
+Action: (leave blank, as you have no tools)  
+Action Input: (leave blank)  
+Observation: (leave blank)  
+...(repeat Thought/Action/Action Input/Observation as needed)  
+Thought: I now know the final answer  
+Final Answer: the final answer to the original input question
+
+**Always end with "Final Answer: ..." as the last line.**
+
+User input: {input} `,
+  verbose: true,
+  maxIterations: 5
 });
 
-export const cfoAgentExecutor = new AgentExecutor({
-  agent,
-  tools,
-  verbose: true,
-  maxIterations: 20,
-  returnIntermediateSteps: true,
-  handleParsingErrors: true,
-});
 
 // Create fallback agent
-const fallbackAgent = await createReactAgent({
-  llm: fallbackLLM,
+// fourth
+const fallbackAgentExecutor = createReactAgent({
+  fallbackLLM,
   tools,
-  prompt: cfoAgentPrompt,
-});
+  stateModifier: `You are the CFO Agent for a startup. Your expertise is in financial modeling, runway planning, and pricing strategy.
+Important:
+- Always answer in the following EXACT format (never omit any section).
+- Never output anything except the required format. Never include troubleshooting URLs, tool call traces, or extra text after "Final Answer".
+- Never output more than one "Final Answer" in a single completion.
 
-const fallbackAgentExecutor = new AgentExecutor({
-  agent: fallbackAgent,
-  tools,
+Given the following input, do the following:
+- Create or review a pricing model for the product (including pricing tiers, rationale, and examples).
+- Draft a 12-month runway plan, outlining expenses, revenue projections, and key financial milestones.
+- Offer suggestions for optimizing financial health and investor readiness.
+
+You have access to some tools to perform certain tasks, use it wisely
+
+Format:
+Question: the input question you must answer  
+Thought: your reasoning process  
+Action: (leave blank, as you have no tools)  
+Action Input: (leave blank)  
+Observation: (leave blank)  
+...(repeat Thought/Action/Action Input/Observation as needed)  
+Thought: I now know the final answer  
+Final Answer: the final answer to the original input question
+
+**Always end with "Final Answer: ..." as the last line.**
+
+User input: {input} `,
   verbose: false, // Less verbose for fallback
-  maxIterations: 15,
+  maxIterations: 5,
   returnIntermediateSteps: true,
   handleParsingErrors: true,
 });
@@ -232,8 +275,14 @@ export async function runCFOAgent(userTask, pubSubOptions = {}) {
 
     const executeAgent = async (executor, executorName) => {
       try {
+        // fifth
         const result = await executor.invoke({
-          input: enhancedInput,
+           messages: [
+        {
+          role: "user", 
+          content: enhancedInput
+        }
+      ]
         });
         console.log(`[CFOAgent] ${executorName} execution successful`);
         return result;
@@ -280,8 +329,8 @@ export async function runCFOAgent(userTask, pubSubOptions = {}) {
         console.error("[CFOAgent] Fallback error:", fallbackError.message);
       }
     }
-
-    const result = agentResult.output ?? agentResult;
+    // sixth
+    const result = agentResult.messages[result.messages.length - 1].content;
 
     // Store interaction in memory
     if (memoryManager && result && typeof result === "string") {

@@ -1,6 +1,5 @@
-import { createReactAgent, AgentExecutor } from "langchain/agents";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { ctoAgentPrompt } from "../prompts/ctoAgentPromt.js";
 import MessageBus from "../utills/MemoryBus.js";
 import MemoryManager from "./memory/MemoryManager.js";
 import { v4 as uuidv4 } from "uuid"; // npm install uuid
@@ -29,15 +28,29 @@ const llm = new ChatGoogleGenerativeAI({
 
 const tools = [generateReadmeTool];
 
-const agent = await createReactAgent({
+
+export const ctoAgentExecutor = createReactAgent({
   llm,
   tools,
-  prompt: ctoAgentPrompt,
-});
+  stateModifier: `You are the CTO Agent for a startup. Your expertise is in technology leadership, software architecture, and rapid MVP development.
+Given input, do the following:
+- Suggest an MVP (Minimum Viable Product) architecture, including system components and data flows.
+- Recommend a modern, scalable tech stack (frontend, backend, database, hosting, etc).
+- Propose APIs or integrations needed, including example endpoints and data models.
+- Offer rationale for your choices, focusing on startup speed and scalability.
 
-export const ctoAgentExecutor = new AgentExecutor({
-  agent,
-  tools,
+You have access to tools to perform certain tasks, use it wisely.
+
+Use the following format:
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: (leave blank, as you have no tools)
+Action Input: (leave blank)
+Observation: (leave blank)
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+User input: {input}`,
   verbose: true,
   maxIterations: 20,
   returnIntermediateSteps: true,
@@ -169,10 +182,15 @@ export async function runCTOAgent(userTask, pubSubOptions = {}) {
 
     console.log("Using CTO agent...");
     const agentResult = await ctoAgentExecutor.invoke({
-      input: enhancedInput,
+      messages: [
+        {
+          role: "user", 
+          content: enhancedInput
+        }
+      ]
     });
 
-    const result = agentResult.output ?? agentResult;
+    const result = agentResult.messages[result.messages.length - 1].content;
 
     if (memoryManager) {
       try {

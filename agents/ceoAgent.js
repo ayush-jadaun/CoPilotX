@@ -219,7 +219,7 @@ export async function runCEOAgent(userTask, pubSubOptions = {}) {
       ]
     });
 // 
-    const result = agentResult.messages[result.messages.length - 1].content;
+    const result = agentResult.messages[agentResult.messages.length - 1].content;
 
     if (memoryManager) {
       try {

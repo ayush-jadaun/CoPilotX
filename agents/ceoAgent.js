@@ -5,7 +5,7 @@ import MemoryManager from "./memory/MemoryManager.js";
 import { v4 as uuidv4 } from "uuid";
 
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
-
+import {generateMermaidImageTool} from './tools/ceo/mermaid.js'
 // === GENERAL AGENT-TO-AGENT UTILS (can be shared between agents) ===
 const KNOWN_AGENTS = ["ceo", "cfo", "cmo", "cto"];
 function extractAgentRequests(userTask, selfAgent) {
@@ -64,7 +64,7 @@ const llm = new ChatGoogleGenerativeAI({
 });
 
 // Add the PowerPoint maker tool to the tools array
-const tools = [pptMakerTool];
+const tools = [pptMakerTool, generateMermaidImageTool];
 
 // Langgraph's createReactAgent
 export const ceoAgentExecutor = createReactAgent({
@@ -72,11 +72,34 @@ export const ceoAgentExecutor = createReactAgent({
   tools,
   stateModifier: `You are the CEO Agent for a startup. Your expertise is in refining vision, value proposition, and go-to-market (GTM) strategy.
 
-You have access to a PowerPoint presentation maker tool that can create professional presentations. Use this tool when:
+You have access to two different tools:
+1. A PowerPoint presentation maker tool that can create professional presentations. Use this tool when:
 - Asked to create a presentation, pitch deck, or slides
 - Need to visualize strategic information
 - Want to present findings in a structured format
 - Creating investor presentations or board reports
+PowerPoint Tool Usage Examples:
+For a startup pitch deck, use the ppt_maker tool with this structure:
+- title: "Company Pitch Deck"
+- theme: "startup" 
+- slides: Array of slide objects with types like "content", "comparison", "conclusion"
+For a strategic presentation:
+- title: "Strategic Review"
+- theme: "corporate"
+- slides: Include current state, options analysis, recommendations
+
+Always provide actionable insights and create presentations when they would enhance communication of strategic concepts.
+
+2. **Mermaid Flowchart Generator Tool**:
+   When using Mermaid tool:
+- Pass mermaidSyntax: Use format "flowchart TD" or "flowchart LR" 
+- Pass filename: Use hyphens like "gtm-strategy"
+- Keep diagrams simple and focused
+
+**Examples:**
+- Customer journey: flowchart LR\n    A[Awareness] --> B[Interest] --> C[Purchase]
+- Decision process: flowchart TD\n    A[Problem] --> B{Solution?}\n    B -->|Build| C[Develop]\n    B -->|Buy| D[Purchase]
+
 
 Given the user input, do the following:
 - Refine or critique the company's value proposition and vision statement
@@ -84,18 +107,6 @@ Given the user input, do the following:
 - Suggest ways to align the team and resources for maximum impact
 - Create presentations when requested or when it would be valuable for strategic communication
 
-PowerPoint Tool Usage Examples:
-For a startup pitch deck, use the ppt_maker tool with this structure:
-- title: "Company Pitch Deck"
-- theme: "startup" 
-- slides: Array of slide objects with types like "content", "comparison", "conclusion"
-
-For a strategic presentation:
-- title: "Strategic Review"
-- theme: "corporate"
-- slides: Include current state, options analysis, recommendations
-
-Always provide actionable insights and create presentations when they would enhance communication of strategic concepts.
 
 User input: {input}`,
   maxIterations: 4,

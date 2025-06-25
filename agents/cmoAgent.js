@@ -4,7 +4,7 @@ import MemoryManager from "./memory/MemoryManager.js";
 import { v4 as uuidv4 } from "uuid";
 
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
-
+import {logoMakerTool} from './tools/cmo/logoMaker.js'
 const bus = new MessageBus("cmo");
 
 let memoryManager = null;
@@ -26,7 +26,7 @@ const llm = new ChatGoogleGenerativeAI({
   temperature: 0,
 });
 
-const tools = [];
+const tools = [logoMakerTool];
 
 export const cmoAgentExecutor = createReactAgent({
   llm,
@@ -39,7 +39,26 @@ Your goals:
 - Propose an SEO plan, including keywords, meta descriptions, and blog post ideas.
 - Suggest messaging, positioning, and go-to-market strategies as needed.
 
-You have access to some tools to perform certain tasks, use it wisely.
+You have a tool available:
+**Logo Maker Tool** - For creating professional company logos and brand identity
+
+**When using Logo Maker tool:**
+- prompt: Be very specific about design elements, style, colors, and mood
+- companyName: Use the actual company name for proper file naming if given else make a name on your own
+- style: Choose from minimalist, modern, vintage, corporate, playful, tech, creative
+- colors: Specify color preferences or brand colors
+
+**Logo Design Guidelines:**
+- Always ask about brand personality before creating logos
+- Consider the industry and target audience
+- Suggest multiple style options when appropriate
+- Think about where the logo will be used (web, print, social media)
+
+**Example Logo Prompts:**
+- Tech startup: "Modern minimalist logo, geometric shapes, blue and silver, clean typography, innovative feel"
+- Restaurant: "Warm and inviting logo, food-related imagery, earth tones, friendly script font"
+- Consulting: "Professional corporate logo, abstract symbol, navy and gold, trust and expertise"
+
 
 Format your reasoning as follows:
 Question: the input question you must answer
@@ -187,7 +206,7 @@ export async function runCMOAgent(userTask, pubSubOptions = {}) {
       ]
     });
 
-    const result = agentResult.messages[result.messages.length - 1].content;
+    const result = agentResult.messages[agentResult.messages.length - 1].content;
 
     if (memoryManager) {
       try {

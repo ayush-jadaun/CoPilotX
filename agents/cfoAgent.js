@@ -330,7 +330,7 @@ export async function runCFOAgent(userTask, pubSubOptions = {}) {
       }
     }
     // sixth
-    const result = agentResult.messages[result.messages.length - 1].content;
+    const result = agentResult.messages[agentResult.messages.length - 1].content;
 
     // Store interaction in memory
     if (memoryManager && result && typeof result === "string") {

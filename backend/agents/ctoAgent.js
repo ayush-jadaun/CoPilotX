@@ -3,6 +3,7 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import MessageBus from "../utills/MemoryBus.js";
 import MemoryManager from "./memory/MemoryManager.js";
 import { v4 as uuidv4 } from "uuid"; // npm install uuid
+import { generateReadmeTool } from "../tools/cto/generateReadmeTool.js";
 
 const bus = new MessageBus("cto");
 
@@ -25,7 +26,7 @@ const llm = new ChatGoogleGenerativeAI({
   temperature: 0,
 });
 
-const tools = [];
+const tools = [generateReadmeTool];
 
 
 export const ctoAgentExecutor = createReactAgent({
